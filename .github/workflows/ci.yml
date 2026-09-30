@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-python-deps
+      - name: flake8
+        run: flake8 src tests
+      - name: yamllint
+        run: yamllint --strict .
+
+  test:
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    services:
+      redis:
+        image: redis:7.4.11-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+    env:
+      REDIS_HOST: localhost
+      REDIS_PORT: "6379"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup-python-deps
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: pytest
+        run: >-
+          pytest -v
+          --junitxml=reports/junit.xml
+          --cov=src --cov-report=xml:reports/coverage.xml --cov-report=term
+      - name: Publier les rapports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-reports-py${{ matrix.python-version }}
+          path: reports/
+          retention-days: 14
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: Build de l'image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          load: true
+          tags: evaluation-devops:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Verifier que l'image ne tourne pas en root
+        run: |
+          user="$(docker image inspect --format '{{.Config.User}}' evaluation-devops:ci)"
+          echo "Utilisateur de l'image : ${user:-root}"
+          [ -n "$user" ] && [ "$user" != root ] && [ "$user" != 0 ]
+
+  ci-ok:
+    needs: [lint, test, build]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Recuperer les rapports de tests
+        if: needs.test.result != 'skipped'
+        uses: actions/download-artifact@v8
+        with:
+          pattern: test-reports-*
+          path: reports
+      - name: Resume des tests
+        if: needs.test.result != 'skipped'
+        shell: python
+        run: |
+          import glob, os
+          import xml.etree.ElementTree as ET
+
+          rows = ["| Rapport | Tests | Echecs | Erreurs | Ignores | Couverture |",
+                  "|---|---|---|---|---|---|"]
+          for folder in sorted(glob.glob("reports/test-reports-*")):
+              suite = ET.parse(f"{folder}/junit.xml").getroot().find("testsuite")
+              cov = float(ET.parse(f"{folder}/coverage.xml").getroot().get("line-rate"))
+              counts = [suite.get(k) for k in ("tests", "failures", "errors", "skipped")]
+              rows.append(f"| {os.path.basename(folder)} | " + " | ".join(counts) + f" | {cov:.0%} |")
+          summary = "\n".join(["### Rapports de tests", "", *rows])
+          print(summary)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as fh:
+              fh.write(summary + "\n")
+      - name: Verdict
+        env:
+          LINT: ${{ needs.lint.result }}
+          TEST: ${{ needs.test.result }}
+          BUILD: ${{ needs.build.result }}
+        run: |
+          echo "lint=$LINT  test=$TEST  build=$BUILD"
+          [ "$LINT" = success ] && [ "$TEST" = success ] && [ "$BUILD" = success ]

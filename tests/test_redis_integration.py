@@ -1,3 +1,5 @@
+import os
+
 import pytest
 import redis
 
@@ -9,7 +11,9 @@ def real_redis():
     client = app_module.get_redis()
     try:
         client.ping()
-    except redis.RedisError:
+    except redis.RedisError as exc:
+        if os.getenv("CI"):
+            pytest.fail(f"Redis injoignable en CI : {exc}")
         pytest.skip("aucun Redis joignable (REDIS_HOST / REDIS_PORT)")
     client.delete("visits")
     yield client

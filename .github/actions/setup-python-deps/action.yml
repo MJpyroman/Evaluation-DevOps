@@ -1,0 +1,39 @@
+name: Python et dependances
+description: Installe Python, restaure le cache pip et installe les dependances de developpement.
+
+inputs:
+  python-version:
+    description: Version de Python a installer
+    required: false
+    default: "3.12"
+
+outputs:
+  cache-hit:
+    description: true si le cache pip a ete restaure
+    value: ${{ steps.python.outputs.cache-hit }}
+
+runs:
+  using: composite
+  steps:
+    - name: Installer Python ${{ inputs.python-version }}
+      id: python
+      uses: actions/setup-python@v7
+      with:
+        python-version: ${{ inputs.python-version }}
+        cache: pip
+        cache-dependency-path: requirements*.txt
+
+    - name: Etat du cache pip
+      shell: bash
+      env:
+        CACHE_HIT: ${{ steps.python.outputs.cache-hit }}
+      run: |
+        if [ "$CACHE_HIT" = true ]; then
+          echo "Cache pip : HIT"
+        else
+          echo "Cache pip : MISS"
+        fi
+
+    - name: Installer les dependances
+      shell: bash
+      run: pip install -r requirements-dev.txt
