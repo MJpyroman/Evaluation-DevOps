@@ -23,6 +23,14 @@ jobs:
         run: flake8 src tests
       - name: yamllint
         run: yamllint --strict .
+      - name: promtool check config
+        run: >-
+          docker run --rm -v "$PWD/prometheus:/etc/prometheus:ro" --entrypoint promtool
+          prom/prometheus:v3.15.0 check config /etc/prometheus/prometheus.yml
+      - name: promtool test rules
+        run: >-
+          docker run --rm -v "$PWD/prometheus:/etc/prometheus:ro" --entrypoint promtool
+          prom/prometheus:v3.15.0 test rules /etc/prometheus/alerts.test.yml
 
   test:
     needs: lint

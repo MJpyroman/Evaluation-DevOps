@@ -1,0 +1,26 @@
+groups:
+  - name: evaluation-devops
+    rules:
+      - alert: TauxErreurs5xxEleve
+        expr: |
+          sum(rate(http_requests_total{code=~"5.."}[2m]))
+            / sum(rate(http_requests_total[2m]))
+            > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: Plus de 5 % des requetes echouent en 5xx
+          description: "{{ $value | humanizePercentage }} de reponses 5xx sur les 2 dernieres minutes."
+
+      - alert: LatenceP95Degradee
+        expr: |
+          histogram_quantile(0.95,
+            sum by (endpoint, le) (rate(http_request_duration_seconds_bucket[5m]))
+          ) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 superieur a 500 ms sur {{ $labels.endpoint }}"
+          description: "p95 de {{ $value | humanizeDuration }} sur {{ $labels.endpoint }}."

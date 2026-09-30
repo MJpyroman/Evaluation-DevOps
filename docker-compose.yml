@@ -32,5 +32,17 @@ services:
       retries: 5
     restart: unless-stopped
 
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    depends_on:
+      - app
+    restart: unless-stopped
+
 volumes:
   redis-data:
+  prometheus-data:

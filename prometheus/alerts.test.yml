@@ -1,0 +1,67 @@
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 1m
+
+tests:
+  - name: 10 % d'erreurs en continu, alerte apres le for
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{endpoint="/visits", code="200"}'
+        values: "0+90x15"
+      - series: 'http_requests_total{endpoint="/visits", code="500"}'
+        values: "0+10x15"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: TauxErreurs5xxEleve
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: TauxErreurs5xxEleve
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+            exp_annotations:
+              summary: Plus de 5 % des requetes echouent en 5xx
+              description: "10% de reponses 5xx sur les 2 dernieres minutes."
+
+  - name: pic de 3 minutes, aucune alerte
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{endpoint="/visits", code="200"}'
+        values: "0+90x15"
+      - series: 'http_requests_total{endpoint="/visits", code="500"}'
+        values: "0x5 30 60 90x8"
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: TauxErreurs5xxEleve
+        exp_alerts: []
+      - eval_time: 11m
+        alertname: TauxErreurs5xxEleve
+        exp_alerts: []
+
+  - name: route lente contre route rapide
+    interval: 1m
+    input_series:
+      - series: 'http_request_duration_seconds_bucket{endpoint="/visits", le="0.5"}'
+        values: "0+50x20"
+      - series: 'http_request_duration_seconds_bucket{endpoint="/visits", le="1.0"}'
+        values: "0+100x20"
+      - series: 'http_request_duration_seconds_bucket{endpoint="/visits", le="+Inf"}'
+        values: "0+100x20"
+      - series: 'http_request_duration_seconds_bucket{endpoint="/", le="0.05"}'
+        values: "0+100x20"
+      - series: 'http_request_duration_seconds_bucket{endpoint="/", le="+Inf"}'
+        values: "0+100x20"
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: LatenceP95Degradee
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: LatenceP95Degradee
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              endpoint: /visits
+            exp_annotations:
+              summary: p95 superieur a 500 ms sur /visits
+              description: p95 de 950ms sur /visits.
