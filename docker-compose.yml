@@ -3,7 +3,7 @@ name: evaluation-devops
 services:
   app:
     build: .
-    image: evaluation-devops:local
+    image: ${APP_IMAGE:-evaluation-devops:local}
     ports:
       - "8080:5000"
     environment:

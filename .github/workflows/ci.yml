@@ -31,6 +31,8 @@ jobs:
         run: >-
           docker run --rm -v "$PWD/prometheus:/etc/prometheus:ro" --entrypoint promtool
           prom/prometheus:v3.15.0 test rules /etc/prometheus/alerts.test.yml
+      - name: shellcheck
+        run: shellcheck deploy/deploy.sh
 
   test:
     needs: lint
